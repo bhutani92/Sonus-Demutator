@@ -175,16 +175,6 @@
                 android:textSize="14sp"
                 tools:text="@string/bg_noise" />
 
-            <TextView
-                android:id="@+id/dbReading"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_alignTop="@+id/current_volume_progress"
-                android:layout_marginTop="35dp"
-                android:layout_toStartOf="@+id/mic_level"
-                android:text="TextView"
-                tools:text="@string/recorder_db" />
-
         </RelativeLayout>
     </ScrollView>
 

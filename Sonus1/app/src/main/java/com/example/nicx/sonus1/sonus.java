@@ -5,7 +5,6 @@ import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.MediaRecorder;
 import android.os.Build;
-import android.support.annotation.MainThread;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -21,8 +20,13 @@ public class sonus extends AppCompatActivity {
 
     private static final int UPDATE_VOLUME_DELAY = 300;
     private static final int MIC_DELAY = 300;
-    private static double mEMA = 0.0;
-    private static final double EMA_FILTER = 0.6;
+    private static final int PERMISSION_CODE = 200;
+    private static final double MIC_FILTER = 0.6;
+    private static final int MIC_AMPL_LOW = 0;
+    private static final int MIC_AMPL_HIGH = 32767;
+    private static int VOLUME_LOW = 0;
+    private static int VOLUME_HIGH = 15;
+    private static double predictedVolume = 0.0;
     private boolean permissionToRecordAccepted = false;
     private boolean permissionToWriteAccepted = false;
     private String [] permissions = {"android.permission.RECORD_AUDIO", "android.permission.WRITE_EXTERNAL_STORAGE"};
@@ -36,7 +40,6 @@ public class sonus extends AppCompatActivity {
     Context context;
     AudioManager audioManager;
     MediaRecorder mediaRecorder;
-    TextView decibelReading;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,9 +60,7 @@ public class sonus extends AppCompatActivity {
 
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
 
-        decibelReading = (TextView) findViewById(R.id.dbReading);
-
-        int requestCode = 200;
+        int requestCode = PERMISSION_CODE;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(permissions, requestCode);
         }
@@ -79,8 +80,13 @@ public class sonus extends AppCompatActivity {
         mediaRecorder.start();
 
         trigger.setChecked(true);
+        currentMic.setMax(MIC_AMPL_HIGH);
         currentVolume.setMax(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
         currentVolume.setProgress(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC));
+        volSeekBar.setMax(currentVolume.getMax());
+        volSeekBar.setProgress(currentVolume.getProgress());
+        VOLUME_LOW = currentVolume.getProgress();
+        VOLUME_HIGH = currentVolume.getMax();
 
         trigger.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -92,13 +98,33 @@ public class sonus extends AppCompatActivity {
                 }
             }
         });
+
+        volSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser == true) {
+                    VOLUME_LOW = progress;
+                    currentVolume.setProgress(progress);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+
+            }
+        });
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         switch (requestCode){
-            case 200:
+            case PERMISSION_CODE:
                 permissionToRecordAccepted  = grantResults[0] == PackageManager.PERMISSION_GRANTED;
                 permissionToWriteAccepted  = grantResults[1] == PackageManager.PERMISSION_GRANTED;
                 break;
@@ -125,8 +151,7 @@ public class sonus extends AppCompatActivity {
             @Override
             public void run() {
                 while (updateCurrentVolume) {
-                    currentVolume.setProgress(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC));
-                    //decibelReading.setText(Integer.toString(currentVolume.getProgress()));
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume.getProgress(), AudioManager.AUDIOFOCUS_NONE);
                     try {
                         Thread.sleep(UPDATE_VOLUME_DELAY);
                     } catch (InterruptedException e) {
@@ -142,7 +167,14 @@ public class sonus extends AppCompatActivity {
            @Override
             public void run() {
                while (getMicReading) {
-                   //decibelReading.setText(Double.toString((getAmplitudeEMA())) + " dB");
+                   Double reading = getAmplitudeEMA();
+                   int volume = (int)Math.round(Math.abs(VOLUME_LOW + (reading / (MIC_AMPL_HIGH - MIC_AMPL_LOW)) * (VOLUME_HIGH - VOLUME_LOW)));
+
+                   currentMic.setProgress((int)Math.round(reading));
+                   if (volume > VOLUME_LOW) {
+                       currentVolume.setProgress(volume);
+                   }
+
                    try {
                        Thread.sleep(MIC_DELAY);
                    } catch (InterruptedException e) {
@@ -162,16 +194,16 @@ public class sonus extends AppCompatActivity {
 
     }
     public double getAmplitudeEMA() {
-        double amp =  getAmplitude();
-        mEMA = EMA_FILTER * amp + (1.0 - EMA_FILTER) * mEMA;
-        return mEMA;
+        double amplitude =  getAmplitude();
+        predictedVolume = MIC_FILTER * amplitude + (1.0 - MIC_FILTER) * predictedVolume;
+        return predictedVolume;
     }
 
     @Override
     public void onStop() {
         super.onStop();
         updateCurrentVolume = false;
-        getMicReading = true;
+        getMicReading = false;
     }
 
     @Override

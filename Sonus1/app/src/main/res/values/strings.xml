@@ -1,3 +1,11 @@
 <resources>
-    <string name="app_name">Sonus1</string>
+    <string name="app_name">Sonus Demutator</string>
+    <string name="vc_title">Volume Control</string>
+    <string name="trigger">Trigger</string>
+    <string name="set_vol">Set Volume</string>
+    <string name="set_mic">Set Mic</string>
+    <string name="status_title">Status</string>
+    <string name="vol_level">Volume Level</string>
+    <string name="bg_noise">Background Noise</string>
+    <string name="recorder_db">Mic DB</string>
 </resources>

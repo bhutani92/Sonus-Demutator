@@ -22,9 +22,9 @@ public class sonus extends AppCompatActivity {
     private static final int MIC_DELAY = 300;
     private static final int PERMISSION_CODE = 200;
     private static final double MIC_FILTER = 0.6;
-    private static final int MIC_AMPL_LOW = 0;
     private static final int MIC_AMPL_HIGH = 32767;
-    private static int VOLUME_LOW = 0;
+    private static final int MIC_AMPL_LOW = 0;
+    private static int VOLUME_LOW=0;
     private static int VOLUME_HIGH = 15;
     private static double predictedVolume = 0.0;
     private boolean permissionToRecordAccepted = false;
@@ -40,6 +40,8 @@ public class sonus extends AppCompatActivity {
     Context context;
     AudioManager audioManager;
     MediaRecorder mediaRecorder;
+    TextView decibelReading;
+    TextView tvTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +61,8 @@ public class sonus extends AppCompatActivity {
         context = getApplicationContext();
 
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
+
+        //decibelReading = (TextView) findViewById(R.id.dbReading);
 
         int requestCode = PERMISSION_CODE;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -85,8 +89,8 @@ public class sonus extends AppCompatActivity {
         currentVolume.setProgress(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC));
         volSeekBar.setMax(currentVolume.getMax());
         volSeekBar.setProgress(currentVolume.getProgress());
-        VOLUME_LOW = currentVolume.getProgress();
         VOLUME_HIGH = currentVolume.getMax();
+        VOLUME_LOW = currentVolume.getProgress();
 
         trigger.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -98,6 +102,33 @@ public class sonus extends AppCompatActivity {
                 }
             }
         });
+
+        tvTime = (TextView) findViewById(R.id.mic_disp);
+        //getMicReading = true;
+        Thread t = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(MIC_DELAY);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                double x = getAmplitudeEMA();
+                                int y = (int) x;
+                                tvTime.setText(Double.toString((getAmplitudeEMA())) + " db");
+                                currentMic.setProgress(y);
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        t.start();
+
 
         volSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
@@ -118,6 +149,7 @@ public class sonus extends AppCompatActivity {
 
             }
         });
+
     }
 
     @Override
@@ -151,6 +183,8 @@ public class sonus extends AppCompatActivity {
             @Override
             public void run() {
                 while (updateCurrentVolume) {
+                    //currentVolume.setProgress(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC));
+                    //decibelReading.setText(Integer.toString(currentVolume.getProgress()));
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume.getProgress(), AudioManager.AUDIOFOCUS_NONE);
                     try {
                         Thread.sleep(UPDATE_VOLUME_DELAY);
@@ -163,25 +197,22 @@ public class sonus extends AppCompatActivity {
         volUpdate.start();
 
         getMicReading = true;
+        tvTime = (TextView) findViewById(R.id.mic_disp);
         Thread recorder = new Thread(new Runnable() {
-           @Override
-            public void run() {
-               while (getMicReading) {
-                   Double reading = getAmplitudeEMA();
-                   int volume = (int)Math.round(Math.abs(VOLUME_LOW + (reading / (MIC_AMPL_HIGH - MIC_AMPL_LOW)) * (VOLUME_HIGH - VOLUME_LOW)));
-
-                   currentMic.setProgress((int)Math.round(reading));
-                   if (volume > VOLUME_LOW) {
-                       currentVolume.setProgress(volume);
-                   }
-
-                   try {
-                       Thread.sleep(MIC_DELAY);
-                   } catch (InterruptedException e) {
-                       e.printStackTrace();
-                   }
-               }
-           }
+            @Override
+            public void run() {while (getMicReading) {
+                Double reading = getAmplitudeEMA();
+                int volume = (int)Math.round(Math.abs(VOLUME_LOW + (reading/(MIC_AMPL_HIGH-MIC_AMPL_LOW))*(VOLUME_HIGH-VOLUME_LOW)));
+                if(volume>VOLUME_LOW){
+                    currentVolume.setProgress(volume);
+                }
+                try {
+                    Thread.sleep(MIC_DELAY);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            }
         });
         recorder.start();
     }

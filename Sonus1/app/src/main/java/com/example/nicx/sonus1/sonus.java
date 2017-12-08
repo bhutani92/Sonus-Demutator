@@ -1,6 +1,10 @@
 package com.example.nicx.sonus1;
 
+import android.app.ActivityManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.media.MediaRecorder;
@@ -13,35 +17,27 @@ import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.IOException;
+import java.text.DecimalFormat;
 
 public class sonus extends AppCompatActivity {
-
-    private static final int UPDATE_VOLUME_DELAY = 300;
-    private static final int MIC_DELAY = 300;
     private static final int PERMISSION_CODE = 200;
-    private static final double MIC_FILTER = 0.6;
-    private static final int MIC_AMPL_HIGH = 32767;
-    private static final int MIC_AMPL_LOW = 0;
-    private static int VOLUME_LOW=0;
-    private static int VOLUME_HIGH = 15;
-    private static double predictedVolume = 0.0;
+    protected final int MIC_AMPL_HIGH = 32767;
+    protected int VOLUME_LOW = 0;
+    protected int VOLUME_HIGH = 15;
     private boolean permissionToRecordAccepted = false;
     private boolean permissionToWriteAccepted = false;
     private String [] permissions = {"android.permission.RECORD_AUDIO", "android.permission.WRITE_EXTERNAL_STORAGE"};
-    boolean updateCurrentVolume;
-    boolean getMicReading;
+    private static Context context;
     Switch trigger;
     SeekBar volSeekBar;
-    SeekBar micSeekBar;
     ProgressBar currentVolume;
     ProgressBar currentMic;
-    Context context;
     AudioManager audioManager;
-    MediaRecorder mediaRecorder;
-    TextView decibelReading;
-    TextView tvTime;
+    ActivityManager activityManager;
+    TextView micReading;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,36 +48,22 @@ public class sonus extends AppCompatActivity {
 
         volSeekBar = (SeekBar)findViewById(R.id.volume_seek);
 
-        micSeekBar = (SeekBar)findViewById(R.id.mic_seek);
-
         currentVolume = (ProgressBar)findViewById(R.id.current_volume_progress);
 
         currentMic = (ProgressBar)findViewById(R.id.current_mic_progress);
 
-        context = getApplicationContext();
-
         audioManager = (AudioManager)getSystemService(AUDIO_SERVICE);
 
-        //decibelReading = (TextView) findViewById(R.id.dbReading);
+        activityManager = (ActivityManager)getSystemService(ACTIVITY_SERVICE);
+
+        sonus.context = getApplicationContext();
+
+        micReading = (TextView) findViewById(R.id.mic_disp);
 
         int requestCode = PERMISSION_CODE;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             requestPermissions(permissions, requestCode);
         }
-
-        mediaRecorder = new MediaRecorder();
-        mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
-        mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
-        mediaRecorder.setOutputFile("/dev/null");
-
-        try {
-            mediaRecorder.prepare();
-        } catch(IOException e) {
-            e.printStackTrace();
-        }
-
-        mediaRecorder.start();
 
         trigger.setChecked(true);
         currentMic.setMax(MIC_AMPL_HIGH);
@@ -96,46 +78,26 @@ public class sonus extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 if (trigger.isChecked() == false) {
+                    Toast.makeText(context,"Service Terminated", Toast.LENGTH_LONG).show();
                     onStop();
                 } else {
+                    Toast.makeText(context,"Service Started", Toast.LENGTH_LONG).show();
                     onStart();
+                    /*if (SonusService.getIsServiceRunning() == false) {
+                        SonusService.setIsServiceRunning(true);
+                        SonusService.setUpdateCurrentVolume(true);
+                        startService(new Intent(context, SonusService.class));
+                    }*/
                 }
             }
         });
-
-        tvTime = (TextView) findViewById(R.id.mic_disp);
-        //getMicReading = true;
-        Thread t = new Thread() {
-
-            @Override
-            public void run() {
-                try {
-                    while (!isInterrupted()) {
-                        Thread.sleep(MIC_DELAY);
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                double x = getAmplitudeEMA();
-                                int y = (int) x;
-                                tvTime.setText(Double.toString((getAmplitudeEMA())) + " db");
-                                currentMic.setProgress(y);
-                            }
-                        });
-                    }
-                } catch (InterruptedException e) {
-                }
-            }
-        };
-
-        t.start();
-
 
         volSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser == true) {
-                    VOLUME_LOW = progress;
-                    currentVolume.setProgress(progress);
+                    SonusService.setVolumeLow(progress);
+                    //currentVolume.setProgress(progress);
                 }
             }
 
@@ -150,6 +112,26 @@ public class sonus extends AppCompatActivity {
             }
         });
 
+    }
+
+    private BroadcastReceiver MICReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent.getAction() != null) {
+                int reading = intent.getIntExtra(SonusService.CURRENT_MIC_PROGRESS, 0);
+                currentMic.setProgress(reading);
+                double dbReading = intent.getDoubleExtra(SonusService.CURRENT_MIC_DB_PROGRESS, 0.0);;
+                DecimalFormat roundOffFormat = new DecimalFormat("#.##");
+                dbReading = Double.valueOf(roundOffFormat.format(dbReading));
+                micReading.setText(Double.toString(dbReading) + " db");
+                int volume = intent.getIntExtra(SonusService.CURRENT_VOLUME_PROGRESS, 0);
+                currentVolume.setProgress(volume);
+            }
+        }
+    };
+
+    public static Context getAppContext() {
+        return sonus.context;
     }
 
     @Override
@@ -173,79 +155,39 @@ public class sonus extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         if (context != null) {
-
+            IntentFilter intentFilter = new IntentFilter(SonusService.INTENT_TO_UPDATE);
+            context.registerReceiver(MICReceiver, intentFilter);
+            if (SonusService.getIsServiceRunning() == false) {
+                startService(new Intent(this, SonusService.class));
+            }
         } else {
             throw new RuntimeException("Unable to start Sonus Demutator");
         }
-
-        updateCurrentVolume = true;
-        Thread volUpdate = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (updateCurrentVolume) {
-                    //currentVolume.setProgress(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC));
-                    //decibelReading.setText(Integer.toString(currentVolume.getProgress()));
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume.getProgress(), AudioManager.AUDIOFOCUS_NONE);
-                    try {
-                        Thread.sleep(UPDATE_VOLUME_DELAY);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        });
-        volUpdate.start();
-
-        getMicReading = true;
-        tvTime = (TextView) findViewById(R.id.mic_disp);
-        Thread recorder = new Thread(new Runnable() {
-            @Override
-            public void run() {while (getMicReading) {
-                Double reading = getAmplitudeEMA();
-                int volume = (int)Math.round(Math.abs(VOLUME_LOW + (reading/(MIC_AMPL_HIGH-MIC_AMPL_LOW))*(VOLUME_HIGH-VOLUME_LOW)));
-                if(volume>VOLUME_LOW){
-                    currentVolume.setProgress(volume);
-                }
-                try {
-                    Thread.sleep(MIC_DELAY);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            }
-        });
-        recorder.start();
-    }
-
-    public double getAmplitude() {
-        if (mediaRecorder != null)
-            return  (mediaRecorder.getMaxAmplitude());
-        else
-            return 0;
-
-    }
-    public double getAmplitudeEMA() {
-        double amplitude =  getAmplitude();
-        predictedVolume = MIC_FILTER * amplitude + (1.0 - MIC_FILTER) * predictedVolume;
-        return predictedVolume;
     }
 
     @Override
     public void onStop() {
         super.onStop();
-        updateCurrentVolume = false;
-        getMicReading = false;
+        if (trigger.isChecked() == false) {
+            //SonusService.setUpdateCurrentVolume(false);
+            if (context != null) {
+                SonusService.setIsServiceRunning(false);
+                unregisterReceiver(MICReceiver);
+                stopService(new Intent(this, SonusService.class));
+            }
+        }
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        //SonusService.setUpdateCurrentVolume(true);
         if (trigger.isChecked() == false) {
-            updateCurrentVolume = false;
-            getMicReading = false;
-        } else {
-            updateCurrentVolume = true;
-            getMicReading = true;
+            trigger.setChecked(true);
+            if (SonusService.getIsServiceRunning() == false) {
+                SonusService.setIsServiceRunning(true);
+                startService(new Intent(this, SonusService.class));
+            }
         }
     }
 }

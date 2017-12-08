@@ -8,4 +8,5 @@
     <string name="vol_level">Volume Level</string>
     <string name="bg_noise">Background Noise</string>
     <string name="recorder_db">Mic DB</string>
+    <string name="mic_disp">MIC Reading</string>
 </resources>

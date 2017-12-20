@@ -26,24 +26,26 @@ public class SonusService extends Service {
     private static int VOLUME_HIGH = 15;
     private static final int UPDATE_VOLUME_DELAY = 300;
     private static boolean isServiceRunning = false;
+    private static boolean isBackgroundUI = false;
     private final double MIC_FILTER = 0.6;
     private final int MIC_AMPL_HIGH = 32767;
     private final int MIC_AMPL_LOW = 0;
     private Intent progressIntent;
 
-    AudioManager audioManager;
-    MediaRecorder mediaRecorder;
+    AudioManager audioManager = null;
+    MediaRecorder mediaRecorder = null;
 
     public static void setVolumeLow(int volume) {
         VOLUME_LOW = volume;
     }
 
-    public static void setUpdateCurrentVolume(boolean update) {
-        updateCurrentVolume = update;
-    }
-
     public static void setIsServiceRunning(boolean running) {
         isServiceRunning = running;
+        updateCurrentVolume = running;
+    }
+
+    public static void setIsBackgroundUI(boolean isBackground) {
+        isBackgroundUI = isBackground;
     }
 
     public static boolean getIsServiceRunning() {
@@ -52,17 +54,16 @@ public class SonusService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) {
-        // TODO: Return the communication channel to the service.
-        //throw new UnsupportedOperationException("Not yet implemented");
         return null;
     }
 
     @Override
     public void onCreate() {
-        //Toast.makeText(this,"Sonus Demutator is running",Toast.LENGTH_LONG).show();
 
+        isBackgroundUI = false;
         progressIntent = new Intent(INTENT_TO_UPDATE);
         audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+
         VOLUME_LOW = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
 
         mediaRecorder = new MediaRecorder();
@@ -95,10 +96,9 @@ public class SonusService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId){
-        //Toast.makeText(this,"Service Started",Toast.LENGTH_LONG).show();
-
         isServiceRunning = true;
         updateCurrentVolume = true;
+
         Thread volUpdate = new Thread(new Runnable() {
             @Override
             public void run() {
@@ -114,7 +114,7 @@ public class SonusService extends Service {
                         volume = VOLUME_HIGH;
                     }
 
-                    if (progressIntent != null) {
+                    if (progressIntent != null && isBackgroundUI == false) {
                         progressIntent.putExtra(CURRENT_MIC_PROGRESS, micReading);
                         progressIntent.putExtra(CURRENT_MIC_DB_PROGRESS, reading);
                         progressIntent.putExtra(CURRENT_VOLUME_PROGRESS, volume);
@@ -122,7 +122,7 @@ public class SonusService extends Service {
                             if (sonus.getAppContext() != null){
                                 sonus.getAppContext().sendBroadcast(progressIntent);
                             }
-                        } catch (NullPointerException e) {
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                         progressIntent = new Intent(INTENT_TO_UPDATE);
@@ -142,9 +142,10 @@ public class SonusService extends Service {
         return START_NOT_STICKY;
     }
 
-    public void onDestroy(){
-        //Toast.makeText(this,"Service Terminated",Toast.LENGTH_LONG).show();
-        updateCurrentVolume = false;
-        isServiceRunning = false;
+    public void onDestroy() {
+        System.out.println("OnDestroy Service");
+        setIsServiceRunning(false);
+        mediaRecorder.stop();
+        mediaRecorder = null;
     }
 }
